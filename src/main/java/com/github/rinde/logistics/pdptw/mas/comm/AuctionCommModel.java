@@ -59,13 +59,15 @@ public class AuctionCommModel<T extends Bid<T>>
   final AtomicInteger numAuctions;
   @Nullable
   final Random rng;
+  final BidderFilter bidderFilter;
 
   AuctionCommModel(AuctionStopCondition<T> sc, Clock c, long maxAuctDurMs,
-                   @Nullable RandomGenerator r) {
+                   @Nullable RandomGenerator r, BidderFilter bFilter) {
     stopCondition = sc;
     parcelAuctioneerMap = new LinkedHashMap<>();
     maxAuctionDurationMs = maxAuctDurMs;
     rng = r == null ? null : new RandomAdaptor(r);
+    bidderFilter = bFilter;
 
     eventDispatcher = new EventDispatcher(EventType.values());
     if (c instanceof RealtimeClockController) {
@@ -264,6 +266,7 @@ public class AuctionCommModel<T extends Bid<T>>
     private static final long serialVersionUID = 9020465403959292485L;
     private static final long DEFAULT_MAX_AUCTION_DURATION_MS = 10 * 60 * 1000L;
     private static final boolean DEFAULT_CFB_SHUFFLING = true;
+    private static final BidderFilter DEFAULT_BIDDER_FILTER = new BidderFilter(-1d,-1d,-1);
 
     Builder() {
       setDependencies(Clock.class, RandomProvider.class);
@@ -273,7 +276,7 @@ public class AuctionCommModel<T extends Bid<T>>
     static <T extends Bid<T>> Builder<T> create() {
       return new AutoValue_AuctionCommModel_Builder<T>(
               AuctionStopConditions.<T>allBidders(), DEFAULT_MAX_AUCTION_DURATION_MS,
-              DEFAULT_CFB_SHUFFLING);
+              DEFAULT_CFB_SHUFFLING, DEFAULT_BIDDER_FILTER);
     }
 
     abstract AuctionStopCondition<T> getStopCondition();
@@ -282,9 +285,11 @@ public class AuctionCommModel<T extends Bid<T>>
 
     abstract boolean getCfbShuffling();
 
+    abstract BidderFilter getBidderFilter();
+
     public Builder<T> withStopCondition(AuctionStopCondition stopCondition) {
       return new AutoValue_AuctionCommModel_Builder<>(stopCondition,
-              getMaxAuctionDuration(), getCfbShuffling());
+              getMaxAuctionDuration(), getCfbShuffling(), getBidderFilter());
     }
 
     /**
@@ -302,7 +307,7 @@ public class AuctionCommModel<T extends Bid<T>>
     public Builder<T> withMaxAuctionDuration(long durationMs) {
       checkArgument(durationMs > 0, "Only positive durations are allowed.");
       return new AutoValue_AuctionCommModel_Builder<>(getStopCondition(),
-              durationMs, getCfbShuffling());
+              durationMs, getCfbShuffling(),getBidderFilter());
     }
 
     /**
@@ -316,8 +321,16 @@ public class AuctionCommModel<T extends Bid<T>>
      */
     public Builder<T> withCfbShuffling(boolean shuffle) {
       return new AutoValue_AuctionCommModel_Builder<>(getStopCondition(),
-              getMaxAuctionDuration(), shuffle);
+              getMaxAuctionDuration(), shuffle, getBidderFilter());
     }
+
+    public Builder<T> withBidderFilter(BidderFilter bidderFilter) {
+      return new AutoValue_AuctionCommModel_Builder<>(getStopCondition(),
+              getMaxAuctionDuration(), getCfbShuffling(),bidderFilter);
+    }
+
+
+
 
     @Override
     public AuctionCommModel<T> build(DependencyProvider dependencyProvider) {
@@ -328,7 +341,19 @@ public class AuctionCommModel<T extends Bid<T>>
         rng = dependencyProvider.get(RandomProvider.class).newInstance();
       }
       return new AuctionCommModel<T>(getStopCondition(), clock,
-              getMaxAuctionDuration(), rng);
+              getMaxAuctionDuration(), rng, getBidderFilter());
+    }
+  }
+
+  public static class BidderFilter {
+    double commDistance;
+    double commDistanceExtention;
+    int minimalAmountOfBidders;
+
+    public BidderFilter(double commDistance, double commDistanceExtention, int minimalAmountOfBidders) {
+      this.commDistance = commDistance;
+      this.commDistanceExtention = commDistanceExtention;
+      this.minimalAmountOfBidders = minimalAmountOfBidders;
     }
   }
 
@@ -377,8 +402,12 @@ public class AuctionCommModel<T extends Bid<T>>
       if (rng != null) {
         Collections.shuffle(communicators, rng);
       }
-      List<Bidder<T>> bidders = filterBidders(communicators, parcel);
-//      List<Bidder<T>> bidders = communicators;
+      List<Bidder<T>> bidders = communicators;
+
+      if (bidderFilter.minimalAmountOfBidders>0){
+        bidders = filterBidders(communicators, parcel);
+      }
+
       for (final Bidder<T> b : bidders) {
 //        System.out.println("bidder "+b.toString()+" "+Point.distanceLonLat(b.getBidderLocation(),parcel.getPickupLocation()));
         if (b != null && b != currentOwner) {
@@ -389,9 +418,10 @@ public class AuctionCommModel<T extends Bid<T>>
 
     private List<Bidder<T>> filterBidders(List<Bidder<T>> bidders, Parcel parcel ){
       List<Bidder<T>> result = new ArrayList<>();
-      double commDistance =  1d;
-      double commDistanceExtention = 1d;
-        while (result.size() < 10) {
+      double commDistance =  bidderFilter.commDistance;
+      double commDistanceExtention = bidderFilter.commDistanceExtention;
+      int minAmount = bidderFilter.minimalAmountOfBidders;
+        while (result.size() < minAmount) {
         result = filterBidders(bidders,parcel,commDistance);
         commDistance += commDistanceExtention;
       }
