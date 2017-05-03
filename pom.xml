@@ -54,8 +54,8 @@
             <groupId>com.github.christofluyten</groupId>
             <artifactId>nyc-rinsim-extension</artifactId>
             <version>1.0-SNAPSHOT</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/src/main/resources/jars/nyc-rinsim-extension.jar</systemPath>
+            <!--<scope>system</scope>-->
+            <!--<systemPath>${project.basedir}/src/main/resources/jars/nyc-rinsim-extension.jar</systemPath>-->
         </dependency>
 
         <dependency>
